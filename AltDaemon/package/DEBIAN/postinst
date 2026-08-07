@@ -2,3 +2,4 @@
 set -e
 
 /var/jb/usr/bin/launchctl bootstrap system /var/jb/Library/LaunchDaemons/com.rileytestut.altdaemon.plist
+/var/jb/usr/bin/launchctl kickstart -k user/foreground/com.rileytestut.altdaemon

@@ -9,6 +9,7 @@ on:
       - "AltStore.xcodeproj/**"
       - "AltStore.xcworkspace/**"
       - "scripts/build-altdaemon.sh"
+      - "scripts/build-rootless-deb.sh"
       - ".github/workflows/altdaemon.yml"
   pull_request:
     paths:
@@ -18,6 +19,7 @@ on:
       - "AltStore.xcodeproj/**"
       - "AltStore.xcworkspace/**"
       - "scripts/build-altdaemon.sh"
+      - "scripts/build-rootless-deb.sh"
       - ".github/workflows/altdaemon.yml"
   workflow_dispatch:
 

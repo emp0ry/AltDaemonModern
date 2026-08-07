@@ -35,6 +35,14 @@ scripts/build-altdaemon.sh
 
 The script prints the path to an unsigned arm64 Mach-O. It intentionally does not install, package, or sign the daemon.
 
+To build a signed Dopamine rootless package on a system with `ldid` and `dpkg-deb`:
+
+```sh
+scripts/build-rootless-deb.sh /path/to/AltDaemon /path/to/AltDaemonModern.deb
+```
+
+The package builder stages files under `/var/jb`, signs a private copy of the input binary, and includes the AGPL and third-party notices. It never changes the input binary.
+
 ## Configuration
 
 The default provider is `https://ani.sidestore.io`. A self-hosted anisette v3 server is recommended when possible because the provider receives the random anisette identifier and ADI provisioning blob.
@@ -71,6 +79,6 @@ Do not add raw header logging. `X-Apple-I-MD`, `X-Apple-I-MD-M`, and `adi.pb` mu
 
 ## Installation
 
-The build product is unsigned. A rootless installation must be signed with the entitlements in `AltDaemon.entitlements`, installed as `/var/jb/usr/bin/AltDaemon`, and bootstrapped with the rootless plist at `AltDaemon/package/Library/LaunchDaemons/com.rileytestut.altdaemon.plist`. Back up an existing executable and validate a separately named, signed copy with `--self-test-anisette` before replacing anything. The obsolete private AuthKit entitlement is intentionally absent because the v3 implementation does not load AuthKit.
+The build product is unsigned. A rootless installation must be signed with the entitlements in `AltDaemon.entitlements`, installed as `/var/jb/usr/bin/AltDaemon`, and bootstrapped with the rootless plist at `AltDaemon/package/var/jb/Library/LaunchDaemons/com.rileytestut.altdaemon.plist`. Back up an existing executable and validate a separately named, signed copy with `--self-test-anisette` before replacing anything. The obsolete private AuthKit entitlement is intentionally absent because the v3 implementation does not load AuthKit.
 
-This repository does not create a `.deb` and does not automatically modify a connected device.
+The standard build script does not create a `.deb` or modify a connected device. Packaging and installation are separate, explicit steps.
