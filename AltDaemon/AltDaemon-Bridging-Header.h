@@ -11,7 +11,7 @@
 #import "CFNotificationName+AltStore.h"
 
 // libproc
-int proc_pidpath(int pid, void * buffer, uint32_t buffersize);
+int proc_pidpath(int pid, void * _Nonnull buffer, uint32_t buffersize);
 
 // Security.framework
 CF_ENUM(uint32_t) {
@@ -24,28 +24,12 @@ CF_ENUM(uint32_t) {
     kSecCSCalculateCMSDigest = 1 << 6,
 };
 
-OSStatus SecStaticCodeCreateWithPath(CFURLRef path, uint32_t flags, void ** __nonnull CF_RETURNS_RETAINED staticCode);
-OSStatus SecCodeCopySigningInformation(void *code, uint32_t flags, CFDictionaryRef * __nonnull CF_RETURNS_RETAINED information);
+typedef CFTypeRef ALTSecStaticCodeRef;
+
+OSStatus SecStaticCodeCreateWithPath(CFURLRef _Nonnull path, uint32_t flags, ALTSecStaticCodeRef _Nullable * __nonnull staticCode);
+OSStatus SecCodeCopySigningInformation(ALTSecStaticCodeRef _Nonnull code, uint32_t flags, CFDictionaryRef _Nullable * __nonnull information);
 
 NS_ASSUME_NONNULL_BEGIN
-
-@interface AKDevice : NSObject
-
-@property (class, readonly) AKDevice *currentDevice;
-
-@property (strong, readonly) NSString *serialNumber;
-@property (strong, readonly) NSString *uniqueDeviceIdentifier;
-@property (strong, readonly) NSString *serverFriendlyDescription;
-
-@end
-
-@interface AKAppleIDSession : NSObject
-
-- (instancetype)initWithIdentifier:(NSString *)identifier;
-
-- (NSDictionary<NSString *, NSString *> *)appleIDHeadersForRequest:(NSURLRequest *)request;
-
-@end
 
 @interface LSApplicationWorkspace : NSObject
 

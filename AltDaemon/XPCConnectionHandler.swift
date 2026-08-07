@@ -54,30 +54,30 @@ extension XPCConnectionHandler: NSXPCListenerDelegate
         let maximumPathLength = 4 * UInt32(MAXPATHLEN)
         
         let pathBuffer = UnsafeMutablePointer<CChar>.allocate(capacity: Int(maximumPathLength))
-        defer { pathBuffer.deallocate() }
+        pathBuffer.initialize(repeating: 0, count: Int(maximumPathLength))
+        defer {
+            pathBuffer.deinitialize(count: Int(maximumPathLength))
+            pathBuffer.deallocate()
+        }
         
-        proc_pidpath(newConnection.processIdentifier, pathBuffer, maximumPathLength)
+        guard proc_pidpath(newConnection.processIdentifier, pathBuffer, maximumPathLength) > 0 else { return false }
         
         let path = String(cString: pathBuffer)
         let fileURL = URL(fileURLWithPath: path)
                 
-        var code: UnsafeMutableRawPointer?
-        defer { code.map { Unmanaged<AnyObject>.fromOpaque($0).release() } }
+        var unmanagedCode: Unmanaged<ALTSecStaticCode>?
+        var status = SecStaticCodeCreateWithPath(fileURL as CFURL, 0, &unmanagedCode)
+        guard status == errSecSuccess, let code = unmanagedCode?.takeRetainedValue() else { return false }
         
-        var status = SecStaticCodeCreateWithPath(fileURL as CFURL, 0, &code)
-        guard status == 0 else { return false }
-        
-        var signingInfo: CFDictionary?
-        defer { signingInfo.map { Unmanaged<AnyObject>.passUnretained($0).release() } }
-        
-        status = SecCodeCopySigningInformation(code, kSecCSInternalInformation | kSecCSSigningInformation, &signingInfo)
-        guard status == 0 else { return false }
+        var unmanagedSigningInfo: Unmanaged<CFDictionary>?
+        status = SecCodeCopySigningInformation(code, kSecCSInternalInformation | kSecCSSigningInformation, &unmanagedSigningInfo)
+        guard status == errSecSuccess, let signingInfo = unmanagedSigningInfo?.takeRetainedValue() else { return false }
         
         // Only accept connections from AltStore.
         guard
             let codeSigningInfo = signingInfo as? [String: Any],
             let bundleIdentifier = codeSigningInfo["identifier"] as? String,
-            bundleIdentifier.contains("com.rileytestut.AltStore")
+            bundleIdentifier == "com.rileytestut.AltStore" || bundleIdentifier.hasPrefix("com.rileytestut.AltStore.")
         else { return false }
         
         let connection = XPCConnection(newConnection)

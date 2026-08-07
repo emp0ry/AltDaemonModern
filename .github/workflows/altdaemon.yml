@@ -1,0 +1,58 @@
+name: AltDaemon
+
+on:
+  push:
+    paths:
+      - "AltDaemon/**"
+      - "Shared/**"
+      - "Dependencies/AltSign"
+      - "AltStore.xcodeproj/**"
+      - "AltStore.xcworkspace/**"
+      - "scripts/build-altdaemon.sh"
+      - ".github/workflows/altdaemon.yml"
+  pull_request:
+    paths:
+      - "AltDaemon/**"
+      - "Shared/**"
+      - "Dependencies/AltSign"
+      - "AltStore.xcodeproj/**"
+      - "AltStore.xcworkspace/**"
+      - "scripts/build-altdaemon.sh"
+      - ".github/workflows/altdaemon.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build AltDaemon
+        env:
+          ALTDAEMON_DERIVED_DATA_DIR: ${{ runner.temp }}/AltDaemonDerivedData
+          ALTDAEMON_PACKAGE_CACHE_DIR: ${{ runner.temp }}/AltDaemonPackages
+        run: scripts/build-altdaemon.sh
+
+      - name: Stage unsigned artifact
+        env:
+          ALTDAEMON_ARTIFACT_DIR: ${{ runner.temp }}/AltDaemonArtifact
+          ALTDAEMON_BINARY: ${{ runner.temp }}/AltDaemonDerivedData/Build/Products/Release-iphoneos/AltDaemon
+          STARSCREAM_LICENSE: ${{ runner.temp }}/AltDaemonPackages/checkouts/Starscream/LICENSE
+        run: |
+          mkdir -p "$ALTDAEMON_ARTIFACT_DIR/licenses"
+          cp "$ALTDAEMON_BINARY" "$ALTDAEMON_ARTIFACT_DIR/AltDaemon"
+          cp LICENSE "$ALTDAEMON_ARTIFACT_DIR/AGPL-3.0.txt"
+          cp AltDaemon/NOTICE.md "$ALTDAEMON_ARTIFACT_DIR/NOTICE.md"
+          cp "$STARSCREAM_LICENSE" "$ALTDAEMON_ARTIFACT_DIR/licenses/Starscream-Apache-2.0.txt"
+          shasum -a 256 "$ALTDAEMON_ARTIFACT_DIR/AltDaemon" > "$ALTDAEMON_ARTIFACT_DIR/AltDaemon.sha256"
+
+      - name: Publish workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AltDaemon-unsigned-arm64
+          path: ${{ runner.temp }}/AltDaemonArtifact
+          if-no-files-found: error

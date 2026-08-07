@@ -8,7 +8,10 @@
 
 #import "NSError+ALTServerError.h"
 
-#if ALTJIT
+#if ALTDAEMON
+#import "AltDaemon-Swift.h"
+@import AltSign;
+#elif ALTJIT
 #import "AltJIT-Swift.h"
 @import AltSign;
 #elif TARGET_OS_OSX

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AD2026080800000000000003 /* NSError+Serialization.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD2026080800000000000002 /* NSError+Serialization.swift */; };
+		AD2026080800000000000006 /* Starscream in Frameworks */ = {isa = PBXBuildFile; productRef = AD2026080800000000000005 /* Starscream */; };
 		820059C32F36BBAA00C22365 /* SafariActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 820059C22F36BBAA00C22365 /* SafariActivity.swift */; };
 		825DAD9E2F0C329C00E0EDF1 /* FediverseLikesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 825DAD9D2F0C329C00E0EDF1 /* FediverseLikesView.swift */; };
 		82BBB9342F185B33005A472E /* AppIcon_Japan.icon in Resources */ = {isa = PBXBuildFile; fileRef = 82BBB9332F185B33005A472E /* AppIcon_Japan.icon */; };
@@ -715,6 +717,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		AD2026080800000000000002 /* NSError+Serialization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSError+Serialization.swift"; sourceTree = "<group>"; };
 		11611D46F8A7C8B928E8156B /* Pods-AltServer.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-AltServer.debug.xcconfig"; path = "Target Support Files/Pods-AltServer/Pods-AltServer.debug.xcconfig"; sourceTree = "<group>"; };
 		589BA531D903B28F292063E5 /* Pods-AltServer.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-AltServer.release.xcconfig"; path = "Target Support Files/Pods-AltServer/Pods-AltServer.release.xcconfig"; sourceTree = "<group>"; };
 		820059C22F36BBAA00C22365 /* SafariActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariActivity.swift; sourceTree = "<group>"; };
@@ -1261,6 +1264,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AD2026080800000000000006 /* Starscream in Frameworks */,
 				BF088D0F25019ABA008082D9 /* AltSign-Static in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1396,6 +1400,7 @@
 			isa = PBXGroup;
 			children = (
 				BFFCFA45248835530077BFCE /* AltDaemon.entitlements */,
+				AD2026080800000000000002 /* NSError+Serialization.swift */,
 				BF10EB33248730750055E6DB /* main.swift */,
 				BFC712C22512D5F100AB5EBE /* XPCConnectionHandler.swift */,
 				BF8CAE442489E772004D6CCE /* DaemonRequestHandler.swift */,
@@ -2651,6 +2656,7 @@
 			);
 			name = AltDaemon;
 			packageProductDependencies = (
+				AD2026080800000000000005 /* Starscream */,
 				BF088D0E25019ABA008082D9 /* AltSign-Static */,
 			);
 			productName = AltDaemon;
@@ -2970,6 +2976,7 @@
 			);
 			mainGroup = BFD247612284B9A500981D42;
 			packageReferences = (
+				AD2026080800000000000004 /* XCRemoteSwiftPackageReference "Starscream" */,
 				D58D5F2C26DFE68E00E55E38 /* XCRemoteSwiftPackageReference "LaunchAtLogin" */,
 				D5FB7A2C2AA2859400EF863D /* XCRemoteSwiftPackageReference "swift-argument-parser" */,
 				D535CEE62BE95D4C00F96119 /* XCRemoteSwiftPackageReference "SwiftClient" */,
@@ -3167,6 +3174,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AD2026080800000000000003 /* NSError+Serialization.swift in Sources */,
 				BF8CAE452489E772004D6CCE /* AnisetteDataManager.swift in Sources */,
 				BF1FE358251A9FB000C3CE09 /* NSXPCConnection+MachServices.swift in Sources */,
 				BFECAC8F24FD950E0077C41F /* Result+Conveniences.swift in Sources */,
@@ -3793,7 +3801,12 @@
 				DYLIB_CURRENT_VERSION = "";
 				EXECUTABLE_EXTENSION = "";
 				EXECUTABLE_SUFFIX = "";
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"ALTDAEMON=1",
+				);
 				INSTALL_PATH = /usr/bin;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_DYLIB_INSTALL_NAME = /usr/bin/AltDaemon;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -3802,8 +3815,7 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"\"${PODS_CONFIGURATION_BUILD_DIR}/Roxas\"",
-					"\"$(SRCROOT)/Dependencies/AltSign/Dependencies/OpenSSL/ios/lib\"",
+					"\"$(SRCROOT)/Dependencies/AltSign/Dependencies/OpenSSL/iphoneos/lib\"",
 				);
 				MACH_O_TYPE = mh_execute;
 				OTHER_LDFLAGS = (
@@ -3835,7 +3847,12 @@
 				EXECUTABLE_EXTENSION = "";
 				EXECUTABLE_SUFFIX = "";
 				GCC_OPTIMIZATION_LEVEL = z;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"ALTDAEMON=1",
+				);
 				INSTALL_PATH = /usr/bin;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_DYLIB_INSTALL_NAME = /usr/bin/AltDaemon;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -3844,8 +3861,7 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"\"${PODS_CONFIGURATION_BUILD_DIR}/Roxas\"",
-					"\"$(SRCROOT)/Dependencies/AltSign/Dependencies/OpenSSL/ios/lib\"",
+					"\"$(SRCROOT)/Dependencies/AltSign/Dependencies/OpenSSL/iphoneos/lib\"",
 				);
 				MACH_O_TYPE = mh_execute;
 				OTHER_LDFLAGS = (
@@ -4865,6 +4881,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		AD2026080800000000000004 /* XCRemoteSwiftPackageReference "Starscream" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/daltoniam/Starscream";
+			requirement = {
+				kind = exactVersion;
+				version = 4.0.8;
+			};
+		};
 		D51F17432F3BAA4E0016D08B /* XCRemoteSwiftPackageReference "Nuke" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/kean/Nuke.git";
@@ -4908,6 +4932,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		AD2026080800000000000005 /* Starscream */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AD2026080800000000000004 /* XCRemoteSwiftPackageReference "Starscream" */;
+			productName = Starscream;
+		};
 		BF088D0E25019ABA008082D9 /* AltSign-Static */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = "AltSign-Static";

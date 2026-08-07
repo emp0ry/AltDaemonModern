@@ -24,16 +24,18 @@ struct DaemonRequestHandler: RequestHandler
 {
     func handleAnisetteDataRequest(_ request: AnisetteDataRequest, for connection: Connection, completionHandler: @escaping (Result<AnisetteDataResponse, Error>) -> Void)
     {
-        do
-        {
-            let anisetteData = try AnisetteDataManager.shared.requestAnisetteData()
-            
-            let response = AnisetteDataResponse(anisetteData: anisetteData)
-            completionHandler(.success(response))
-        }
-        catch
-        {
-            completionHandler(.failure(error))
+        Task {
+            do
+            {
+                let anisetteData = try await AnisetteDataManager.shared.requestAnisetteData()
+
+                let response = AnisetteDataResponse(anisetteData: anisetteData)
+                completionHandler(.success(response))
+            }
+            catch
+            {
+                completionHandler(.failure(error))
+            }
         }
     }
     
@@ -119,5 +121,12 @@ struct DaemonRequestHandler: RequestHandler
                 completionHandler(.success(response))
             }
         }
+    }
+
+    func handleEnableUnsignedCodeExecutionRequest(_ request: EnableUnsignedCodeExecutionRequest, for connection: Connection, completionHandler: @escaping (Result<EnableUnsignedCodeExecutionResponse, Error>) -> Void)
+    {
+        // AltDaemon installs already-signed applications and does not provide AltJIT's
+        // developer-disk-image service.
+        completionHandler(.failure(ALTServerError(.unknownRequest)))
     }
 }
