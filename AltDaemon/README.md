@@ -13,6 +13,7 @@ This fork repairs AltDaemon for rootless jailbreaks and replaces its obsolete 20
 - Serializes concurrent requests through a Swift actor.
 - Keeps MID, OTP, ADI, and Apple credentials out of logs.
 - Fixes the Security.framework ownership bug by consuming Create/Copy results exactly once with `takeRetainedValue()`.
+- Accepts canonical and valid team-prefixed AltStore code identifiers, as produced by common re-signing workflows.
 - Includes daemon-specific target fixes needed to build current upstream source.
 
 The minimum deployment target is iOS 15.0. The primary target is Dopamine's standard rootless environment; RootHide is not currently supported.

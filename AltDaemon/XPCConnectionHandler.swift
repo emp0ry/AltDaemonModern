@@ -39,6 +39,33 @@ class XPCConnectionHandler: NSObject, ConnectionHandler
 
 private extension XPCConnectionHandler
 {
+    func isAllowedAltStoreBundleIdentifier(_ bundleIdentifier: String) -> Bool
+    {
+        let canonicalIdentifier = "com.rileytestut.AltStore"
+        if bundleIdentifier == canonicalIdentifier || bundleIdentifier.hasPrefix(canonicalIdentifier + ".")
+        {
+            return true
+        }
+
+        let components = bundleIdentifier.split(separator: ".", omittingEmptySubsequences: false)
+        guard components.count >= 5,
+              components[0] == "com",
+              components[2] == "com",
+              components[3] == "rileytestut",
+              components[4] == "AltStore"
+        else { return false }
+
+        let teamIdentifier = components[1]
+        guard teamIdentifier.count == 10,
+              teamIdentifier.unicodeScalars.allSatisfy({ scalar in
+                  CharacterSet.uppercaseLetters.contains(scalar) || CharacterSet.decimalDigits.contains(scalar)
+              })
+        else { return false }
+
+        // Additional components are permitted for official beta/variant bundle IDs.
+        return true
+    }
+
     func disconnect(_ connection: Connection)
     {
         connection.disconnect()
@@ -77,7 +104,7 @@ extension XPCConnectionHandler: NSXPCListenerDelegate
         guard
             let codeSigningInfo = signingInfo as? [String: Any],
             let bundleIdentifier = codeSigningInfo["identifier"] as? String,
-            bundleIdentifier == "com.rileytestut.AltStore" || bundleIdentifier.hasPrefix("com.rileytestut.AltStore.")
+            self.isAllowedAltStoreBundleIdentifier(bundleIdentifier)
         else { return false }
         
         let connection = XPCConnection(newConnection)
