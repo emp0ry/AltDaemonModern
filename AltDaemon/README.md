@@ -71,6 +71,6 @@ Do not add raw header logging. `X-Apple-I-MD`, `X-Apple-I-MD-M`, and `adi.pb` mu
 
 ## Installation
 
-The build product is unsigned. A rootless installation must be signed with the entitlements in `AltDaemon.entitlements`, placed under `/var/jb`, and loaded by the existing mobile launchd job. Back up the installed executable and validate a separately named, signed copy with `--self-test-anisette` before replacing anything. The obsolete private AuthKit entitlement is intentionally absent because the v3 implementation does not load AuthKit.
+The build product is unsigned. A rootless installation must be signed with the entitlements in `AltDaemon.entitlements`, installed as `/var/jb/usr/bin/AltDaemon`, and bootstrapped with the rootless plist at `AltDaemon/package/Library/LaunchDaemons/com.rileytestut.altdaemon.plist`. Back up an existing executable and validate a separately named, signed copy with `--self-test-anisette` before replacing anything. The obsolete private AuthKit entitlement is intentionally absent because the v3 implementation does not load AuthKit.
 
 This repository does not create a `.deb` and does not automatically modify a connected device.

@@ -1,2 +1,4 @@
 #!/bin/sh
-launchctl unload /Library/LaunchDaemons/com.rileytestut.altdaemon.plist
+set -e
+
+/var/jb/usr/bin/launchctl bootout system/com.rileytestut.altdaemon >/dev/null 2>&1 || true
