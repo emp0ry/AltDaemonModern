@@ -1,6 +1,6 @@
 Package: com.rileytestut.altdaemon
 Name: AltDaemon Modern
-Version: 1.1.0~modern2
+Version: 1.1.1
 Architecture: iphoneos-arm64
 Description: Rootless AltDaemon with modern anisette v3 support.
  AltDaemon allows compatible AltStore builds to install and refresh apps
@@ -8,4 +8,4 @@ Description: Rootless AltDaemon with modern anisette v3 support.
 Maintainer: AltDaemonModern contributors
 Author: Riley Testut and AltDaemonModern contributors
 Homepage: https://github.com/altstoreio/AltStore
-Section: System
+Section: Tweaks
