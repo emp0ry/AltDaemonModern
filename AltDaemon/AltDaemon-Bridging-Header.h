@@ -3,6 +3,9 @@
 //
 
 #import <Foundation/Foundation.h>
+#import <dlfcn.h>
+#import <objc/message.h>
+#import <objc/runtime.h>
 
 // Shared
 #import "ALTConstants.h"
@@ -41,3 +44,36 @@ NS_ASSUME_NONNULL_BEGIN
 @end
 
 NS_ASSUME_NONNULL_END
+
+typedef void (^ALTInstallCoordinationCompletion)(id _Nullable identity, NSError *_Nullable error);
+
+// LaunchServices' legacy installApplication: wrapper returns unimpErr on iOS 26.
+// Keep the older path as the default and use this direct InstallCoordination entry
+// point only as a runtime fallback when that specific error is encountered.
+static inline BOOL ALTBeginInstallWithInstallCoordination(NSURL * _Nonnull fileURL,
+                                                          NSDictionary<NSString *, id> * _Nonnull options,
+                                                          ALTInstallCoordinationCompletion _Nonnull completion)
+{
+    static void *installCoordinationHandle = NULL;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        installCoordinationHandle = dlopen("/System/Library/PrivateFrameworks/InstallCoordination.framework/InstallCoordination",
+                                           RTLD_LAZY | RTLD_LOCAL);
+    });
+
+    if (installCoordinationHandle == NULL)
+    {
+        return NO;
+    }
+
+    Class coordinatorClass = objc_getClass("IXAppInstallCoordinator");
+    SEL selector = sel_registerName("_beginInstallForURL:forPersonaUniqueString:consumeSource:options:progressBlock:completionWithIdentity:");
+    if (coordinatorClass == Nil || ![(id)coordinatorClass respondsToSelector:selector])
+    {
+        return NO;
+    }
+
+    typedef void (*ALTBeginInstallFunction)(id, SEL, NSURL *, NSString *_Nullable, BOOL, NSDictionary *, id _Nullable, ALTInstallCoordinationCompletion);
+    ((ALTBeginInstallFunction)objc_msgSend)(coordinatorClass, selector, fileURL, nil, NO, options, nil, completion);
+    return YES;
+}

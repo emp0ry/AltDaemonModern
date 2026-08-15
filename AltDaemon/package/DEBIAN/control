@@ -1,8 +1,8 @@
 Package: com.rileytestut.altdaemon
 Name: AltDaemon Modern
-Version: 1.1.1
+Version: 1.1.2
 Architecture: iphoneos-arm64
-Description: Rootless AltDaemon with modern anisette v3 support.
+Description: Rootless AltDaemon with modern anisette v3 and iOS 26 install support.
  AltDaemon allows compatible AltStore builds to install and refresh apps
  without a computer. This fork targets standard Dopamine rootless jailbreaks.
 Maintainer: AltDaemonModern contributors

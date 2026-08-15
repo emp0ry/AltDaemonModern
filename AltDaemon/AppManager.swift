@@ -41,9 +41,44 @@ struct AppManager
             let lsApplicationWorkspace = unsafeBitCast(NSClassFromString("LSApplicationWorkspace")!, to: LSApplicationWorkspace.Type.self)
             
             let options = ["CFBundleIdentifier": bundleIdentifier, "AllowInstallLocalProvisioned": NSNumber(value: true)] as [String : Any]
-            let result = Result { try lsApplicationWorkspace.default.installApplication(fileURL, withOptions: options) }
-            
-            completionHandler(result)
+            do
+            {
+                try lsApplicationWorkspace.default.installApplication(fileURL, withOptions: options)
+                completionHandler(.success(()))
+            }
+            catch
+            {
+                let nsError = error as NSError
+                let operatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion
+                guard operatingSystemVersion.majorVersion >= 26,
+                      nsError.domain == NSOSStatusErrorDomain,
+                      nsError.code == -4 else
+                {
+                    completionHandler(.failure(error))
+                    return
+                }
+
+                var installCoordinationOptions = options
+                installCoordinationOptions["IsUserInitiated"] = NSNumber(value: true)
+                installCoordinationOptions["PackageType"] = "Developer"
+                installCoordinationOptions["SkipWatchAppInstall"] = NSNumber(value: true)
+
+                let didBeginInstall = ALTBeginInstallWithInstallCoordination(fileURL, installCoordinationOptions) { _, installError in
+                    if let installError = installError
+                    {
+                        completionHandler(.failure(installError))
+                    }
+                    else
+                    {
+                        completionHandler(.success(()))
+                    }
+                }
+
+                if !didBeginInstall
+                {
+                    completionHandler(.failure(error))
+                }
+            }
         }
     }
     
