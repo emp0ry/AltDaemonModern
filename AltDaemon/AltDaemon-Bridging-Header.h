@@ -74,6 +74,6 @@ static inline BOOL ALTBeginInstallWithInstallCoordination(NSURL * _Nonnull fileU
     }
 
     typedef void (*ALTBeginInstallFunction)(id, SEL, NSURL *, NSString *_Nullable, BOOL, NSDictionary *, id _Nullable, ALTInstallCoordinationCompletion);
-    ((ALTBeginInstallFunction)objc_msgSend)(coordinatorClass, selector, fileURL, nil, NO, options, nil, completion);
+    ((ALTBeginInstallFunction)objc_msgSend)(coordinatorClass, selector, fileURL, nil, YES, options, nil, completion);
     return YES;
 }
