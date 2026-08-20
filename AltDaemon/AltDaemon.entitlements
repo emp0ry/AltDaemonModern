@@ -8,6 +8,8 @@
 	<true/>
 	<key>platform-application</key>
 	<true/>
+	<key>com.apple.private.InstallCoordination.allowed</key>
+	<true/>
 	<key>com.apple.private.mobileinstall.allowedSPI</key>
 	<array>
 		<string>Install</string>

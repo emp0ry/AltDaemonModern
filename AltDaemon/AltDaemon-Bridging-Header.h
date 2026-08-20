@@ -74,6 +74,22 @@ static inline BOOL ALTBeginInstallWithInstallCoordination(NSURL * _Nonnull fileU
     }
 
     typedef void (*ALTBeginInstallFunction)(id, SEL, NSURL *, NSString *_Nullable, BOOL, NSDictionary *, id _Nullable, ALTInstallCoordinationCompletion);
-    ((ALTBeginInstallFunction)objc_msgSend)(coordinatorClass, selector, fileURL, nil, YES, options, nil, completion);
+    @try
+    {
+        // The source belongs to AltDaemon's request lifecycle. Ask
+        // InstallCoordination to copy it rather than deleting it asynchronously.
+        ((ALTBeginInstallFunction)objc_msgSend)(coordinatorClass, selector, fileURL, nil, NO, options, nil, completion);
+    }
+    @catch (NSException *exception)
+    {
+        NSDictionary *userInfo = @{
+            NSLocalizedDescriptionKey: @"The iOS 26 installation service raised an exception.",
+            NSLocalizedFailureReasonErrorKey: exception.reason ?: exception.name,
+        };
+        completion(nil, [NSError errorWithDomain:@"io.altstore.altdaemon.InstallCoordination"
+                                             code:1
+                                         userInfo:userInfo]);
+    }
+
     return YES;
 }
