@@ -4,21 +4,25 @@ on:
   push:
     paths:
       - "AltDaemon/**"
+      - "Compatibility/**"
       - "Shared/**"
       - "Dependencies/AltSign"
       - "AltStore.xcodeproj/**"
       - "AltStore.xcworkspace/**"
       - "scripts/build-altdaemon.sh"
+      - "scripts/build-altstore-auth-compat.sh"
       - "scripts/build-rootless-deb.sh"
       - ".github/workflows/altdaemon.yml"
   pull_request:
     paths:
       - "AltDaemon/**"
+      - "Compatibility/**"
       - "Shared/**"
       - "Dependencies/AltSign"
       - "AltStore.xcodeproj/**"
       - "AltStore.xcworkspace/**"
       - "scripts/build-altdaemon.sh"
+      - "scripts/build-altstore-auth-compat.sh"
       - "scripts/build-rootless-deb.sh"
       - ".github/workflows/altdaemon.yml"
   workflow_dispatch:
@@ -39,6 +43,9 @@ jobs:
           ALTDAEMON_PACKAGE_CACHE_DIR: ${{ runner.temp }}/AltDaemonPackages
         run: scripts/build-altdaemon.sh
 
+      - name: Build AltStore authentication compatibility module
+        run: scripts/build-altstore-auth-compat.sh "${{ runner.temp }}/AltStoreAuthCompat.dylib"
+
       - name: Stage unsigned artifact
         env:
           ALTDAEMON_ARTIFACT_DIR: ${{ runner.temp }}/AltDaemonArtifact
@@ -47,10 +54,12 @@ jobs:
         run: |
           mkdir -p "$ALTDAEMON_ARTIFACT_DIR/licenses"
           cp "$ALTDAEMON_BINARY" "$ALTDAEMON_ARTIFACT_DIR/AltDaemon"
+          cp "${{ runner.temp }}/AltStoreAuthCompat.dylib" "$ALTDAEMON_ARTIFACT_DIR/AltStoreAuthCompat.dylib"
           cp LICENSE "$ALTDAEMON_ARTIFACT_DIR/AGPL-3.0.txt"
           cp AltDaemon/NOTICE.md "$ALTDAEMON_ARTIFACT_DIR/NOTICE.md"
           cp "$STARSCREAM_LICENSE" "$ALTDAEMON_ARTIFACT_DIR/licenses/Starscream-Apache-2.0.txt"
           shasum -a 256 "$ALTDAEMON_ARTIFACT_DIR/AltDaemon" > "$ALTDAEMON_ARTIFACT_DIR/AltDaemon.sha256"
+          shasum -a 256 "$ALTDAEMON_ARTIFACT_DIR/AltStoreAuthCompat.dylib" > "$ALTDAEMON_ARTIFACT_DIR/AltStoreAuthCompat.dylib.sha256"
 
       - name: Publish workflow artifact
         uses: actions/upload-artifact@v4

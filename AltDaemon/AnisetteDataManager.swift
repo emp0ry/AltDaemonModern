@@ -15,16 +15,21 @@ import AltSign
 
 private enum AnisettePreferenceKey
 {
+    static let suiteName = "io.altstore.altdaemon"
     static let serverURL = "io.altstore.altdaemon.anisette.serverURL"
+    static let serverURLs = "io.altstore.altdaemon.anisette.serverURLs"
+    static let lastWorkingServerURL = "io.altstore.altdaemon.anisette.lastWorkingServerURL"
     static let clientInfo = "io.altstore.altdaemon.anisette.clientInfo"
     static let userAgent = "io.altstore.altdaemon.anisette.userAgent"
     static let identifier = "io.altstore.altdaemon.anisette.v3.identifier"
     static let adiPB = "io.altstore.altdaemon.anisette.v3.adiPB"
+    static let identityRevision = "io.altstore.altdaemon.anisette.identityRevision"
 }
 
 private enum AnisetteEnvironmentKey
 {
     static let serverURL = "ALTDAEMON_ANISETTE_URL"
+    static let serverURLs = "ALTDAEMON_ANISETTE_URLS"
     static let clientInfo = "ALTDAEMON_ANISETTE_CLIENT_INFO"
     static let userAgent = "ALTDAEMON_ANISETTE_USER_AGENT"
     static let allowInsecureServer = "ALTDAEMON_ALLOW_INSECURE_ANISETTE"
@@ -42,6 +47,7 @@ private enum ModernAnisetteError: LocalizedError
     case providerError(String, String?)
     case notProvisioned
     case provisioningLimitExceeded
+    case allProvidersFailed([String], String?)
 
     var errorDescription: String?
     {
@@ -77,17 +83,31 @@ private enum ModernAnisetteError: LocalizedError
 
         case .provisioningLimitExceeded:
             return "The anisette provisioning session exceeded its message limit."
+
+        case .allProvidersFailed(let hosts, let lastError):
+            let providers = hosts.isEmpty ? "configured providers" : hosts.joined(separator: ", ")
+            if let lastError = lastError, !lastError.isEmpty
+            {
+                return "All anisette providers failed (\(providers)). Last error: \(lastError)"
+            }
+            return "All anisette providers failed (\(providers))."
         }
     }
 }
 
 private struct AnisetteConfiguration
 {
-    // Keep these in sync with the maintained client identity used by SideStore.
+    // Apple validates X-MMe-Client-Info as one coherent model/OS/Xcode tuple.
+    // Do not combine a current macOS version with the obsolete Xcode 11.2 build
+    // identifier (3594.4.19): current GSA authentication rejects that identity.
     // Both values can be overridden without rebuilding the daemon.
-    static let defaultServerURL = "https://ani.sidestore.io"
-    static let defaultClientInfo = "<MacBookPro18,3> <macOS;26.6;25F84> <com.apple.AuthKit/1 (com.apple.dt.Xcode/3594.4.19)>"
-    static let defaultUserAgent = "AuthKit/1 (Macintosh; OS X 26.6) (com.apple.dt.Xcode/3594.4.19)"
+    static let defaultServerURLs = [
+        "https://ani.sidestore.io",
+        "https://ani.sidestore.app",
+        "https://ani.sidestore.zip",
+    ]
+    static let defaultClientInfo = "<Mac17,3> <macOS;27.0;26A5416b> <com.apple.AuthKit/1 (com.apple.dt.Xcode/25183.54.10)>"
+    static let defaultUserAgent = "AuthKit/1 (Macintosh; OS X 27.0) (com.apple.dt.Xcode/25183.54.10)"
 
     let serverURL: URL
     let clientInfo: String
@@ -97,21 +117,33 @@ private struct AnisetteConfiguration
     let locale: Locale
     let timeZone: TimeZone
 
-    static func load(identifierData: Data, defaults: UserDefaults = .standard, environment: [String: String] = ProcessInfo.processInfo.environment) throws -> AnisetteConfiguration
+    static func load(identifierData: Data, defaults suppliedDefaults: UserDefaults? = nil, environment: [String: String] = ProcessInfo.processInfo.environment) throws -> [AnisetteConfiguration]
     {
-        let serverValue = environment[AnisetteEnvironmentKey.serverURL]
-            ?? defaults.string(forKey: AnisettePreferenceKey.serverURL)
-            ?? self.defaultServerURL
-
-        guard let serverURL = URL(string: serverValue), let scheme = serverURL.scheme?.lowercased(), serverURL.host != nil else
-        {
-            throw ModernAnisetteError.invalidServerURL(serverValue)
-        }
-
+        let suiteName = environment[AnisetteEnvironmentKey.stateSuite] ?? AnisettePreferenceKey.suiteName
+        let defaults = suppliedDefaults ?? UserDefaults(suiteName: suiteName) ?? .standard
         let allowsInsecureServer = environment[AnisetteEnvironmentKey.allowInsecureServer] == "1"
-        if scheme != "https" && !(allowsInsecureServer && scheme == "http")
+        let serverValues: [String]
+        if let environmentList = environment[AnisetteEnvironmentKey.serverURLs]
         {
-            throw ModernAnisetteError.insecureServerURL(serverValue)
+            serverValues = self.splitServerList(environmentList)
+        }
+        else if let environmentServer = environment[AnisetteEnvironmentKey.serverURL], !environmentServer.isEmpty
+        {
+            // An explicitly configured server is treated as a trust decision. Do not
+            // silently send its provisioning state to public fallback providers.
+            serverValues = [environmentServer]
+        }
+        else if let storedServers = defaults.array(forKey: AnisettePreferenceKey.serverURLs) as? [String], !storedServers.isEmpty
+        {
+            serverValues = storedServers
+        }
+        else if let storedServer = defaults.string(forKey: AnisettePreferenceKey.serverURL), !storedServer.isEmpty
+        {
+            serverValues = [storedServer]
+        }
+        else
+        {
+            serverValues = self.defaultServerURLs
         }
 
         let clientInfo = environment[AnisetteEnvironmentKey.clientInfo]
@@ -133,13 +165,53 @@ private struct AnisetteConfiguration
         let digest = SHA256.hash(data: identifierData)
         let localUserID = digest.map { String(format: "%02X", $0) }.joined()
 
-        return AnisetteConfiguration(serverURL: serverURL,
-                                     clientInfo: clientInfo,
-                                     userAgent: userAgent,
-                                     localUserID: localUserID,
-                                     deviceID: uuid.uuidString.uppercased(),
-                                     locale: .current,
-                                     timeZone: .current)
+        var seenHosts = Set<String>()
+        var configurations: [AnisetteConfiguration] = []
+        for serverValue in serverValues
+        {
+            let trimmedValue = serverValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let serverURL = URL(string: trimmedValue),
+                  let scheme = serverURL.scheme?.lowercased(),
+                  let host = serverURL.host?.lowercased(),
+                  !host.isEmpty
+            else
+            {
+                continue
+            }
+            guard scheme == "https" || (allowsInsecureServer && scheme == "http") else
+            {
+                continue
+            }
+
+            let normalizedKey = "\(scheme)://\(host)\(serverURL.port.map { ":\($0)" } ?? "")\(serverURL.path)"
+            guard seenHosts.insert(normalizedKey).inserted else { continue }
+
+            configurations.append(AnisetteConfiguration(serverURL: serverURL,
+                                                        clientInfo: clientInfo,
+                                                        userAgent: userAgent,
+                                                        localUserID: localUserID,
+                                                        deviceID: uuid.uuidString.uppercased(),
+                                                        locale: .current,
+                                                        timeZone: .current))
+        }
+
+        guard !configurations.isEmpty else
+        {
+            let firstValue = serverValues.first ?? ""
+            if let url = URL(string: firstValue), url.scheme?.lowercased() == "http", !allowsInsecureServer
+            {
+                throw ModernAnisetteError.insecureServerURL(firstValue)
+            }
+            throw ModernAnisetteError.invalidServerURL(firstValue)
+        }
+        return configurations
+    }
+
+    private static func splitServerList(_ value: String) -> [String]
+    {
+        return value.components(separatedBy: CharacterSet(charactersIn: ",;\n"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 }
 
@@ -158,6 +230,8 @@ private struct AnisettePayload
 
 private final class AnisetteStateStore
 {
+    private static let currentIdentityRevision = 2
+
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults? = nil, environment: [String: String] = ProcessInfo.processInfo.environment)
@@ -173,8 +247,33 @@ private final class AnisetteStateStore
         }
         else
         {
-            self.defaults = .standard
+            // AltDaemon is a command-line executable, not an application bundle.
+            // UserDefaults.standard therefore has no reliable application domain.
+            // An explicit suite keeps the machine identifier and ADI blob stable
+            // across launchd restarts.
+            self.defaults = UserDefaults(suiteName: AnisettePreferenceKey.suiteName) ?? .standard
         }
+
+        self.migrateIdentityIfNeeded()
+    }
+
+    private func migrateIdentityIfNeeded()
+    {
+        let storedRevision = self.defaults.integer(forKey: AnisettePreferenceKey.identityRevision)
+        guard storedRevision < Self.currentIdentityRevision else { return }
+
+        // Identities generated before revision 2 used an obsolete/incoherent
+        // X-MMe-Client-Info tuple. Its provisioning state must not be paired with
+        // the corrected tuple. AltStore's account and app data are not stored here.
+        if self.defaults.object(forKey: AnisettePreferenceKey.identifier) != nil
+        {
+            self.defaults.removeObject(forKey: AnisettePreferenceKey.identifier)
+            self.defaults.removeObject(forKey: AnisettePreferenceKey.adiPB)
+            self.defaults.removeObject(forKey: AnisettePreferenceKey.lastWorkingServerURL)
+        }
+
+        self.defaults.set(Self.currentIdentityRevision, forKey: AnisettePreferenceKey.identityRevision)
+        self.defaults.synchronize()
     }
 
     func identifierData() throws -> Data
@@ -195,13 +294,28 @@ private final class AnisetteStateStore
 
         // A replacement identifier must never be paired with an old ADI blob.
         self.defaults.removeObject(forKey: AnisettePreferenceKey.adiPB)
+        self.defaults.synchronize()
         return data
     }
 
     var adiPB: String?
     {
         get { return self.defaults.string(forKey: AnisettePreferenceKey.adiPB) }
-        set { self.defaults.set(newValue, forKey: AnisettePreferenceKey.adiPB) }
+        set
+        {
+            self.defaults.set(newValue, forKey: AnisettePreferenceKey.adiPB)
+            self.defaults.synchronize()
+        }
+    }
+
+    var lastWorkingServerURL: String?
+    {
+        get { return self.defaults.string(forKey: AnisettePreferenceKey.lastWorkingServerURL) }
+        set
+        {
+            self.defaults.set(newValue, forKey: AnisettePreferenceKey.lastWorkingServerURL)
+            self.defaults.synchronize()
+        }
     }
 
     func clearProvisioning()
@@ -214,6 +328,8 @@ private actor ModernAnisetteV3Provider
 {
     private let stateStore: AnisetteStateStore
     private let session: URLSession
+    private var requestInProgress = false
+    private var requestWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(stateStore: AnisetteStateStore = AnisetteStateStore())
     {
@@ -228,8 +344,42 @@ private actor ModernAnisetteV3Provider
 
     func requestAnisetteData() async throws -> AnisettePayload
     {
+        await self.acquireRequestSlot()
+        defer { self.releaseRequestSlot() }
+
         let identifierData = try self.stateStore.identifierData()
-        let configuration = try AnisetteConfiguration.load(identifierData: identifierData)
+        var configurations = try AnisetteConfiguration.load(identifierData: identifierData)
+
+        if let lastWorkingURL = self.stateStore.lastWorkingServerURL,
+           let index = configurations.firstIndex(where: { $0.serverURL.absoluteString == lastWorkingURL }),
+           index != configurations.startIndex
+        {
+            configurations.insert(configurations.remove(at: index), at: configurations.startIndex)
+        }
+
+        var failedHosts: [String] = []
+        var lastError: Error?
+        for configuration in configurations
+        {
+            do
+            {
+                let payload = try await self.requestAnisetteData(identifierData: identifierData,
+                                                                 configuration: configuration)
+                self.stateStore.lastWorkingServerURL = configuration.serverURL.absoluteString
+                return payload
+            }
+            catch
+            {
+                failedHosts.append(configuration.serverURL.host ?? configuration.serverURL.absoluteString)
+                lastError = error
+            }
+        }
+
+        throw ModernAnisetteError.allProvidersFailed(failedHosts, lastError?.localizedDescription)
+    }
+
+    private func requestAnisetteData(identifierData: Data, configuration: AnisetteConfiguration) async throws -> AnisettePayload
+    {
 
         if self.stateStore.adiPB == nil
         {
@@ -243,10 +393,36 @@ private actor ModernAnisetteV3Provider
         catch ModernAnisetteError.notProvisioned
         {
             // ADI state can expire or become invalid when a provider changes. Reprovision
-            // once with the same stable identifier, then surface any subsequent error.
-            self.stateStore.clearProvisioning()
-            self.stateStore.adiPB = try await self.provision(identifierData: identifierData, configuration: configuration)
+            // once with the same stable identifier. Keep the old blob until provisioning
+            // succeeds so another provider can still use it during failover.
+            let replacement = try await self.provision(identifierData: identifierData, configuration: configuration)
+            self.stateStore.adiPB = replacement
             return try await self.fetchHeaders(identifierData: identifierData, configuration: configuration)
+        }
+    }
+
+    private func acquireRequestSlot() async
+    {
+        if !self.requestInProgress
+        {
+            self.requestInProgress = true
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            self.requestWaiters.append(continuation)
+        }
+    }
+
+    private func releaseRequestSlot()
+    {
+        if self.requestWaiters.isEmpty
+        {
+            self.requestInProgress = false
+        }
+        else
+        {
+            self.requestWaiters.removeFirst().resume()
         }
     }
 }
@@ -502,6 +678,7 @@ private final class AnisetteProvisioningWebSocketSession: WebSocketDelegate, @un
     private let lock = NSLock()
     private var continuation: CheckedContinuation<String, Error>?
     private var socket: WebSocket?
+    private var timeoutTask: Task<Void, Never>?
     private var messageCount = 0
 
     init(url: URL,
@@ -526,9 +703,28 @@ private final class AnisetteProvisioningWebSocketSession: WebSocketDelegate, @un
             request.timeoutInterval = 20
 
             let socket = WebSocket(request: request)
-            self.socket = socket
             socket.delegate = self
+
+            self.lock.lock()
+            self.socket = socket
+            self.lock.unlock()
             socket.connect()
+
+            let timeoutTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                guard !Task.isCancelled else { return }
+                self?.fail(URLError(.timedOut), client: nil)
+            }
+            self.lock.lock()
+            if self.continuation == nil
+            {
+                timeoutTask.cancel()
+            }
+            else
+            {
+                self.timeoutTask = timeoutTask
+            }
+            self.lock.unlock()
         }
     }
 
@@ -674,6 +870,9 @@ private final class AnisetteProvisioningWebSocketSession: WebSocketDelegate, @un
 
         let continuation = self.continuation
         self.continuation = nil
+        self.timeoutTask?.cancel()
+        self.timeoutTask = nil
+        self.socket = nil
         return continuation
     }
 

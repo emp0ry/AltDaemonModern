@@ -8,6 +8,12 @@
 
 import Foundation
 
+private struct PendingXPCReceive
+{
+    let expectedSize: Int
+    let completionHandler: (Data?, Error?) -> Void
+}
+
 @objc private protocol XPCConnectionProxy
 {
     func ping(completionHandler: @escaping () -> Void)
@@ -25,13 +31,12 @@ extension XPCConnection
 public class XPCConnection: NSObject, Connection
 {
     public let xpcConnection: NSXPCConnection
-    
-    private let queue = DispatchQueue(label: "io.altstore.XPCConnection")
-    private let dispatchGroup = DispatchGroup()
-    private var semaphore: DispatchSemaphore?
+
+    private let stateLock = NSLock()
     private var buffer = Data(capacity: 1024)
-    
+    private var pendingReceives: [PendingXPCReceive] = []
     private var error: Error?
+    private var didDisconnect = false
     
     public init(_ xpcConnection: NSXPCConnection)
     {
@@ -43,8 +48,8 @@ public class XPCConnection: NSObject, Connection
         
         super.init()
         
-        xpcConnection.interruptionHandler = {
-            self.error = ALTServerError(.lostConnection)
+        xpcConnection.interruptionHandler = { [weak self] in
+            self?.failPendingReceives(with: ALTServerError(.lostConnection))
         }
                 
         xpcConnection.exportedObject = self
@@ -59,11 +64,53 @@ public class XPCConnection: NSObject, Connection
 
 private extension XPCConnection
 {
+    func currentError() -> Error?
+    {
+        self.stateLock.lock()
+        defer { self.stateLock.unlock() }
+        return self.error
+    }
+
+    func failPendingReceives(with error: Error)
+    {
+        let pending: [PendingXPCReceive]
+
+        self.stateLock.lock()
+        if self.error == nil
+        {
+            self.error = error
+        }
+        pending = self.pendingReceives
+        self.pendingReceives.removeAll()
+        self.stateLock.unlock()
+
+        for receive in pending
+        {
+            receive.completionHandler(nil, error)
+        }
+    }
+
+    func takeReadyReceivesLocked() -> [(Data, (Data?, Error?) -> Void)]
+    {
+        var ready: [(Data, (Data?, Error?) -> Void)] = []
+
+        while let receive = self.pendingReceives.first,
+              self.buffer.count >= receive.expectedSize
+        {
+            self.pendingReceives.removeFirst()
+            let data = Data(self.buffer.prefix(receive.expectedSize))
+            self.buffer.removeFirst(receive.expectedSize)
+            ready.append((data, receive.completionHandler))
+        }
+
+        return ready
+    }
+
     func makeProxy(errorHandler: @escaping (Error) -> Void) -> XPCConnectionProxy
     {
         let proxy = self.xpcConnection.remoteObjectProxyWithErrorHandler { (error) in
             print("Error messaging remote object proxy:", error)
-            self.error = error
+            self.failPendingReceives(with: error)
             errorHandler(error)
         } as! XPCConnectionProxy
         
@@ -86,12 +133,26 @@ public extension XPCConnection
     
     func disconnect()
     {
-        self.xpcConnection.invalidate()
+        let shouldInvalidate: Bool
+
+        self.stateLock.lock()
+        shouldInvalidate = !self.didDisconnect
+        self.didDisconnect = true
+        self.stateLock.unlock()
+
+        self.failPendingReceives(with: ALTServerError(.lostConnection))
+        if shouldInvalidate
+        {
+            self.xpcConnection.invalidate()
+        }
     }
     
     func __send(_ data: Data, completionHandler: @escaping (Bool, Error?) -> Void)
     {
-        guard self.error == nil else { return completionHandler(false, self.error) }
+        if let error = self.currentError()
+        {
+            return completionHandler(false, error)
+        }
         
         let proxy = self.makeProxy { (error) in
             completionHandler(false, error)
@@ -104,23 +165,38 @@ public extension XPCConnection
     
     func __receiveData(expectedSize: Int, completionHandler: @escaping (Data?, Error?) -> Void)
     {
-        guard self.error == nil else { return completionHandler(nil, self.error) }
-        
-        self.queue.async {
-            let copiedBuffer = self.buffer // Copy buffer to prevent runtime crashes.
-            guard copiedBuffer.count >= expectedSize else {
-                self.semaphore = DispatchSemaphore(value: 0)
-                DispatchQueue.global().async {
-                    _ = self.semaphore?.wait(timeout: .now() + 1.0)
-                    self.__receiveData(expectedSize: expectedSize, completionHandler: completionHandler)
-                }
-                return
-            }
-            
-            let data = copiedBuffer.prefix(expectedSize)
-            self.buffer = copiedBuffer.dropFirst(expectedSize)
-            
-            completionHandler(data, nil)
+        guard expectedSize >= 0 else
+        {
+            return completionHandler(nil, ALTServerError(.invalidRequest))
+        }
+
+        var immediateResult: (Data?, Error?)?
+
+        self.stateLock.lock()
+        if let error = self.error
+        {
+            immediateResult = (nil, error)
+        }
+        else if expectedSize == 0
+        {
+            immediateResult = (Data(), nil)
+        }
+        else if self.buffer.count >= expectedSize
+        {
+            let data = Data(self.buffer.prefix(expectedSize))
+            self.buffer.removeFirst(expectedSize)
+            immediateResult = (data, nil)
+        }
+        else
+        {
+            self.pendingReceives.append(PendingXPCReceive(expectedSize: expectedSize,
+                                                          completionHandler: completionHandler))
+        }
+        self.stateLock.unlock()
+
+        if let result = immediateResult
+        {
+            completionHandler(result.0, result.1)
         }
     }
 }
@@ -141,13 +217,32 @@ extension XPCConnection: XPCConnectionProxy
     
     fileprivate func receive(_ data: Data, completionHandler: @escaping (Bool, Error?) -> Void)
     {
-        self.queue.async {
+        let ready: [(Data, (Data?, Error?) -> Void)]
+        let connectionError: Error?
+
+        self.stateLock.lock()
+        connectionError = self.error
+        if connectionError == nil
+        {
             self.buffer.append(data)
-            
-            self.semaphore?.signal()
-            self.semaphore = nil
-            
-            completionHandler(true, nil)
+            ready = self.takeReadyReceivesLocked()
+        }
+        else
+        {
+            ready = []
+        }
+        self.stateLock.unlock()
+
+        guard connectionError == nil else
+        {
+            completionHandler(false, connectionError)
+            return
+        }
+
+        completionHandler(true, nil)
+        for (receivedData, receiveCompletion) in ready
+        {
+            receiveCompletion(receivedData, nil)
         }
     }
 }
