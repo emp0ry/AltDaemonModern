@@ -25,6 +25,10 @@ This fork repairs AltDaemon for rootless jailbreaks and replaces its obsolete 20
 - Fixes the Security.framework ownership bug by consuming Create/Copy results exactly once with `takeRetainedValue()`.
 - Accepts canonical and valid team-prefixed AltStore code identifiers, as produced by common re-signing workflows.
 - On iOS 26, falls back from the removed LaunchServices installer to InstallCoordination using the runtime `MIInstallOptions` object expected by that API. iOS 26 is supported in the current release.
+- Stages AltStore self-refreshes before reporting the handoff complete, then waits
+  briefly for App Intents to return their result before replacing AltStore. This
+  prevents successful Shortcuts refreshes from being reported as helper-app
+  communication failures.
 - Includes daemon-specific target fixes needed to build current upstream source.
 
 The minimum deployment target is iOS 15.0. The primary target is Dopamine's standard rootless environment; RootHide is not currently supported.

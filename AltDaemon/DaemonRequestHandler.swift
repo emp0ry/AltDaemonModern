@@ -10,6 +10,91 @@ import Foundation
 
 typealias DaemonConnectionManager = ConnectionManager<DaemonRequestHandler>
 
+private final class DeferredAltStoreInstaller
+{
+    static let shared = DeferredAltStoreInstaller()
+
+    // Give App Intents enough time to return their result to Shortcuts before
+    // replacing AltStore terminates the process that hosts the intent.
+    private let installationDelay: TimeInterval = 5
+    private let staleFileAge: TimeInterval = 24 * 60 * 60
+    private let fileManager = FileManager.default
+    private let stagingQueue = DispatchQueue(label: "io.altstore.AltDaemon.selfInstallStaging", qos: .userInitiated)
+
+    private var stagingDirectory: URL {
+        return self.fileManager.temporaryDirectory.appendingPathComponent("io.altstore.altdaemon-staged-installs", isDirectory: true)
+    }
+
+    private init() {}
+
+    func stage(_ sourceURL: URL) throws -> URL
+    {
+        return try self.stagingQueue.sync {
+            let resourceValues = try sourceURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            guard resourceValues.isRegularFile == true, (resourceValues.fileSize ?? 0) > 0 else {
+                throw ALTServerError(.invalidRequest)
+            }
+
+            try self.fileManager.createDirectory(at: self.stagingDirectory,
+                                                 withIntermediateDirectories: true,
+                                                 attributes: [.posixPermissions: NSNumber(value: 0o700)])
+            self.removeStaleFiles()
+
+            let destinationURL = self.stagingDirectory
+                .appendingPathComponent("AltStore-\(UUID().uuidString)")
+                .appendingPathExtension("ipa")
+            try self.fileManager.copyItem(at: sourceURL, to: destinationURL)
+
+            let stagedValues = try destinationURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            guard stagedValues.isRegularFile == true,
+                  stagedValues.fileSize == resourceValues.fileSize
+            else {
+                try? self.fileManager.removeItem(at: destinationURL)
+                throw ALTServerError(.invalidRequest)
+            }
+
+            return destinationURL
+        }
+    }
+
+    func install(_ fileURL: URL, bundleIdentifier: String, activeProfiles: Set<String>?)
+    {
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + self.installationDelay) {
+            AppManager.shared.installApp(at: fileURL,
+                                         bundleIdentifier: bundleIdentifier,
+                                         activeProfiles: activeProfiles) { result in
+                defer { try? self.fileManager.removeItem(at: fileURL) }
+
+                switch result
+                {
+                case .success:
+                    print("Installed staged AltStore self-refresh.")
+                case .failure(let error):
+                    print("Failed to install staged AltStore self-refresh:", error)
+                }
+            }
+        }
+    }
+
+    private func removeStaleFiles()
+    {
+        guard let fileURLs = try? self.fileManager.contentsOfDirectory(at: self.stagingDirectory,
+                                                                       includingPropertiesForKeys: [.contentModificationDateKey],
+                                                                       options: [.skipsHiddenFiles])
+        else { return }
+
+        let staleDate = Date().addingTimeInterval(-self.staleFileAge)
+        for fileURL in fileURLs where fileURL.lastPathComponent.hasPrefix("AltStore-")
+        {
+            let modificationDate = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+            if modificationDate == nil || modificationDate! < staleDate
+            {
+                try? self.fileManager.removeItem(at: fileURL)
+            }
+        }
+    }
+}
+
 private let connectionManager = ConnectionManager(requestHandler: DaemonRequestHandler(),
                                                   connectionHandlers: [XPCConnectionHandler()])
 
@@ -52,6 +137,19 @@ struct DaemonRequestHandler: RequestHandler
             {
                 guard case .beginInstallation(let request) = try result.get() else { throw ALTServerError(.unknownRequest) }
                 guard let bundleIdentifier = request.bundleIdentifier else { throw ALTServerError(.invalidRequest) }
+
+                if isAltStoreBundleIdentifier(bundleIdentifier)
+                {
+                    // Installing AltStore terminates the process hosting its App Intent. Copy
+                    // the IPA before acknowledging the handoff because AltStore deletes its
+                    // temporary IPA as soon as it receives the final progress response.
+                    let stagedFileURL = try DeferredAltStoreInstaller.shared.stage(fileURL)
+                    completionHandler(.success(InstallationProgressResponse(progress: 1.0)))
+                    DeferredAltStoreInstaller.shared.install(stagedFileURL,
+                                                             bundleIdentifier: bundleIdentifier,
+                                                             activeProfiles: request.activeProfiles)
+                    return
+                }
                 
                 AppManager.shared.installApp(at: fileURL, bundleIdentifier: bundleIdentifier, activeProfiles: request.activeProfiles) { (result) in
                     let result = result.map { InstallationProgressResponse(progress: 1.0) }
