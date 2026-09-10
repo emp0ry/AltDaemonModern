@@ -205,7 +205,7 @@ static NSURLSessionDataTask *AAMDataTaskWithRequest(id object,
     // also enforced here so the request cannot accidentally reuse stale data.
     [updatedRequest setValue:@"AuthKit/1 (Macintosh; OS X 26.5.2) (com.apple.dt.Xcode/26.0)"
           forHTTPHeaderField:@"User-Agent"];
-    [updatedRequest setValue:@"<Mac17,3> <macOS;27.0;26A5416b> <com.apple.AuthKit/1 (com.apple.dt.Xcode/25183.54.10)>"
+    [updatedRequest setValue:@"<Mac17,3> <macOS;27.0;26A5416b> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
           forHTTPHeaderField:@"X-MMe-Client-Info"];
 
     NSString *requestMessage = [NSString stringWithFormat:@"request path=%@ method=%@ correctedClientInfo=%@",

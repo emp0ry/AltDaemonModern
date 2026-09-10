@@ -1,6 +1,6 @@
 Package: com.rileytestut.altdaemon
 Name: AltDaemon Modern
-Version: 1.1.9
+Version: 1.2.0
 Architecture: iphoneos-arm64
 Depends: ellekit (>= 1.2)
 Description: Reliable rootless AltDaemon with current Apple login compatibility.
