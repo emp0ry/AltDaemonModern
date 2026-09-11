@@ -15,9 +15,9 @@ This fork repairs AltDaemon for rootless jailbreaks and replaces its obsolete 20
 - Uses a coherent current model/macOS/Xcode client identity instead of mixing a
   current macOS version with the obsolete Xcode 11.2 build identifier.
 - Includes an AltStore-only compatibility module for Classic 2.2.1 that updates
-  its obsolete GSA authentication user agent, retries transient Apple HTTP
-  429/5xx responses with bounded backoff, and reports an accurate service error
-  instead of trying to parse an HTML error page as a property list.
+  its obsolete GSA authentication identity to `com.apple.akd`, retries transient
+  Apple HTTP 429/5xx responses with bounded backoff, and reports an accurate
+  service error instead of trying to parse an HTML error page as a property list.
 - Serializes concurrent requests through a Swift actor.
 - Replaces the polling semaphore in the XPC transport with a locked pending-read
   queue, preventing intermittent daemon crashes and lost-connection errors.

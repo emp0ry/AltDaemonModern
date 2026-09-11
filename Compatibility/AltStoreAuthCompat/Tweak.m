@@ -198,11 +198,11 @@ static NSURLSessionDataTask *AAMDataTaskWithRequest(id object,
 
     NSMutableURLRequest *updatedRequest = [request mutableCopy];
     NSString *originalClientInfo = [updatedRequest valueForHTTPHeaderField:@"X-MMe-Client-Info"];
-    BOOL hadCorrectClientInfo = [originalClientInfo containsString:@"com.apple.dt.Xcode/25183.54.10"];
+    BOOL hadCorrectClientInfo = [originalClientInfo containsString:@"com.apple.akd/1.0"];
 
     // AltStore 2.2.1 identifies the GSA request as a 2018 AuthKit client.
-    // Current AltSign uses this modern AuthKit form. The client-info tuple is
-    // also enforced here so the request cannot accidentally reuse stale data.
+    // Apple now rejects GSA requests identifying as Xcode. The client-info
+    // header is enforced here so the request cannot reuse that blocked token.
     [updatedRequest setValue:@"AuthKit/1 (Macintosh; OS X 26.5.2) (com.apple.dt.Xcode/26.0)"
           forHTTPHeaderField:@"User-Agent"];
     [updatedRequest setValue:@"<Mac17,3> <macOS;27.0;26A5416b> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
