@@ -114,6 +114,62 @@ static NSError *AAMAppleServiceError(NSHTTPURLResponse *response)
                            userInfo:@{NSLocalizedDescriptionKey: description}];
 }
 
+// Diagnostic only. Always returns a line so a missing line means the build
+// without this code is loaded. Logs Apple's GSA status fields (ec / em / hsc) and
+// the names (never the values) of the other keys in "Response". When the plist
+// cannot be parsed or Apple reports a non-zero ec, a capped copy of the body is
+// logged too (that is an error reply, not the SRP exchange).
+static NSString *AAMBodyPreview(NSData *data)
+{
+    NSString *text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    if (text == nil) return [NSString stringWithFormat:@"(%lu bytes, not UTF-8)", (unsigned long)data.length];
+
+    NSArray<NSString *> *parts = [text componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *collapsed = [[parts filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"length > 0"]] componentsJoinedByString:@" "];
+    return collapsed.length > 1200 ? [collapsed substringToIndex:1200] : collapsed;
+}
+
+static NSString *AAMStatusSummary(NSData *data)
+{
+    if (data.length == 0) return @"status (empty body)";
+
+    NSError *parseError = nil;
+    id plist = [NSPropertyListSerialization propertyListWithData:data
+                                                         options:NSPropertyListImmutable
+                                                          format:NULL
+                                                           error:&parseError];
+    if (![plist isKindOfClass:[NSDictionary class]])
+    {
+        return [NSString stringWithFormat:@"status unparsed (%@) body=%@",
+                parseError.localizedDescription ?: [NSString stringWithFormat:@"root is %@", NSStringFromClass([plist class])],
+                AAMBodyPreview(data)];
+    }
+
+    NSDictionary *root = (NSDictionary *)plist;
+    NSDictionary *response = [root[@"Response"] isKindOfClass:[NSDictionary class]] ? root[@"Response"] : root;
+    NSDictionary *status = [response[@"Status"] isKindOfClass:[NSDictionary class]] ? response[@"Status"] : nil;
+
+    NSMutableArray<NSString *> *otherKeys = [NSMutableArray array];
+    for (id key in response)
+    {
+        if ([key isKindOfClass:[NSString class]] && ![key isEqualToString:@"Status"]) [otherKeys addObject:key];
+    }
+    [otherKeys sortUsingSelector:@selector(compare:)];
+
+    NSString *em = [status[@"em"] description];
+    if (em.length > 200) em = [em substringToIndex:200];
+
+    NSString *summary = [NSString stringWithFormat:@"status ec=%@ em=%@ hsc=%@ responseKeys=[%@]",
+                         status[@"ec"] ?: @"(none)",
+                         em ?: @"(none)",
+                         status[@"hsc"] ?: @"(none)",
+                         [otherKeys componentsJoinedByString:@","]];
+
+    BOOL isError = (status == nil) || ([status[@"ec"] integerValue] != 0);
+    if (isError) summary = [summary stringByAppendingFormat:@" body=%@", AAMBodyPreview(data)];
+    return summary;
+}
+
 static NSURLSessionDataTask *AAMCreateAppleAuthenticationTask(id object,
                                                                SEL selector,
                                                                NSURLRequest *request,
@@ -149,6 +205,7 @@ static NSURLSessionDataTask *AAMCreateAppleAuthenticationTask(id object,
                                      firstByte == NSNotFound ? @"none" : [NSString stringWithFormat:@"0x%02lx", (unsigned long)firstByte],
                                      error == nil ? @"none" : [NSString stringWithFormat:@"%@/%ld", error.domain, (long)error.code]];
         AAMAppendDiagnostic(responseMessage);
+        AAMAppendDiagnostic(AAMStatusSummary(data));
 
         if (attempt < AAMMaximumRetryCount && AAMShouldRetry(httpResponse, error))
         {
@@ -203,9 +260,9 @@ static NSURLSessionDataTask *AAMDataTaskWithRequest(id object,
     // AltStore 2.2.1 identifies the GSA request as a 2018 AuthKit client.
     // Apple now rejects GSA requests identifying as Xcode. The client-info
     // header is enforced here so the request cannot reuse that blocked token.
-    [updatedRequest setValue:@"AuthKit/1 (Macintosh; OS X 26.5.2) (com.apple.dt.Xcode/26.0)"
+    [updatedRequest setValue:@"AuthKit/1 (Macintosh; OS X 26.5.2) (com.apple.akd/1.0)"
           forHTTPHeaderField:@"User-Agent"];
-    [updatedRequest setValue:@"<Mac17,3> <macOS;27.0;26A5416b> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
+    [updatedRequest setValue:@"<Pixel 7> <Android;14;UQ1A.240205.002> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
           forHTTPHeaderField:@"X-MMe-Client-Info"];
 
     NSString *requestMessage = [NSString stringWithFormat:@"request path=%@ method=%@ correctedClientInfo=%@",
@@ -240,7 +297,7 @@ static void AAMInitialize(void)
             method_setImplementation(class_getInstanceMethod(sessionClass, selector), (IMP)AAMDataTaskWithRequest);
         }
 
-        AAMAppendDiagnostic([NSString stringWithFormat:@"loaded in %@ sessionClass=%@",
+        AAMAppendDiagnostic([NSString stringWithFormat:@"loaded build=status-log-2 in %@ sessionClass=%@",
                              NSBundle.mainBundle.bundleIdentifier ?: @"(unknown)",
                              NSStringFromClass(sessionClass)]);
         [probeSession invalidateAndCancel];
