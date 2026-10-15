@@ -1,6 +1,6 @@
 Package: com.rileytestut.altdaemon
 Name: AltDaemon Modern
-Version: 1.2.0
+Version: 1.2.2
 Architecture: iphoneos-arm64
 Depends: ellekit (>= 1.2)
 Description: Reliable rootless AltDaemon with current Apple login compatibility.
@@ -10,3 +10,6 @@ Maintainer: AltDaemonModern contributors
 Author: Riley Testut and AltDaemonModern contributors
 Homepage: https://github.com/altstoreio/AltStore
 Section: Tweaks
+Depiction: https://cydia.ichitaso.com/depiction/altdaemon.html
+SileoDepiction: https://cydia.ichitaso.com/depiction/altdaemon.json
+Icon: https://raw.githubusercontent.com/ichitaso/AltDaemonModern/refs/heads/main/Repo/Icon-60%403x.png

@@ -106,8 +106,8 @@ private struct AnisetteConfiguration
         "https://ani.sidestore.app",
         "https://ani.sidestore.zip",
     ]
-    static let defaultClientInfo = "<Mac17,3> <macOS;27.0;26A5416b> <com.apple.AuthKit/1 (com.apple.dt.Xcode/25183.54.10)>"
-    static let defaultUserAgent = "AuthKit/1 (Macintosh; OS X 27.0) (com.apple.dt.Xcode/25183.54.10)"
+    static let defaultClientInfo = "<Pixel 7> <Android;14;UQ1A.240205.002> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
+    static let defaultUserAgent = "AuthKit/1 (Macintosh; OS X 26.5.2) (com.apple.dt.Xcode/26.0)"
 
     let serverURL: URL
     let clientInfo: String
@@ -884,6 +884,146 @@ private final class AnisetteProvisioningWebSocketSession: WebSocketDelegate, @un
     }
 }
 
+// MARK: - On-device (AuthKit) anisette
+//
+// Mirrors what the Mac AltServer does: the anisette data is produced by the real
+// device through AuthKit, so MachineID / OTP / device ID are coherent with each
+// other instead of being emulated by a public server. Everything is resolved
+// through the Objective-C runtime so the daemon still links and runs if AuthKit
+// changes; any failure is reported and the v3 provider is used as a fallback.
+private enum NativeAnisetteError: LocalizedError
+{
+    case frameworkUnavailable
+    case classUnavailable(String)
+    case selectorUnavailable(String)
+    case missingHeaders([String])
+
+    var errorDescription: String?
+    {
+        switch self
+        {
+        case .frameworkUnavailable: return "AuthKit could not be loaded."
+        case .classUnavailable(let name): return "AuthKit class \(name) is unavailable."
+        case .selectorUnavailable(let name): return "AuthKit selector \(name) is unavailable."
+        case .missingHeaders(let names): return "AuthKit did not return: \(names.joined(separator: ", "))."
+        }
+    }
+}
+
+private enum NativeAnisetteProvider
+{
+    static func requestAnisetteData() throws -> ALTAnisetteData
+    {
+        guard dlopen("/System/Library/PrivateFrameworks/AuthKit.framework/AuthKit", RTLD_NOW) != nil else
+        {
+            throw NativeAnisetteError.frameworkUnavailable
+        }
+
+        guard let sessionClass = NSClassFromString("AKAppleIDSession") else { throw NativeAnisetteError.classUnavailable("AKAppleIDSession") }
+        guard let deviceClass = NSClassFromString("AKDevice") else { throw NativeAnisetteError.classUnavailable("AKDevice") }
+
+        let allocSelector = NSSelectorFromString("alloc")
+        let initSelector = NSSelectorFromString("initWithIdentifier:")
+        let headersSelector = NSSelectorFromString("appleIDHeadersForRequest:")
+        let currentDeviceSelector = NSSelectorFromString("currentDevice")
+
+        guard let allocated = (sessionClass as AnyObject).perform(allocSelector)?.takeUnretainedValue() as? NSObject,
+              allocated.responds(to: initSelector)
+        else { throw NativeAnisetteError.selectorUnavailable("initWithIdentifier:") }
+
+        guard let session = allocated.perform(initSelector, with: "com.apple.gs.xcode.auth")?.takeUnretainedValue() as? NSObject,
+              session.responds(to: headersSelector)
+        else { throw NativeAnisetteError.selectorUnavailable("appleIDHeadersForRequest:") }
+
+        let request = NSURLRequest(url: URL(string: "https://developerservices2.apple.com/services/QH65B2/listTeams.action?clientId=XABBG36SBA")!)
+        guard let rawHeaders = session.perform(headersSelector, with: request)?.takeUnretainedValue() as? [AnyHashable: Any] else
+        {
+            throw NativeAnisetteError.missingHeaders(["headers"])
+        }
+
+        var headers: [String: String] = [:]
+        for (key, value) in rawHeaders
+        {
+            guard let key = key as? String else { continue }
+            headers[key.lowercased()] = (value as? String) ?? "\(value)"
+        }
+
+        var device: NSObject?
+        if (deviceClass as AnyObject).responds(to: currentDeviceSelector)
+        {
+            device = (deviceClass as AnyObject).perform(currentDeviceSelector)?.takeUnretainedValue() as? NSObject
+        }
+
+        func deviceString(_ name: String) -> String?
+        {
+            guard let device = device else { return nil }
+            let selector = NSSelectorFromString(name)
+            guard device.responds(to: selector) else { return nil }
+            return device.perform(selector)?.takeUnretainedValue() as? String
+        }
+
+        func nonEmpty(_ value: String?) -> String?
+        {
+            guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+            return trimmed
+        }
+
+        let machineID = nonEmpty(headers["x-apple-i-md-m"])
+        let oneTimePassword = nonEmpty(headers["x-apple-i-md"])
+        let routingInfo = nonEmpty(headers["x-apple-i-md-rinfo"]).flatMap { UInt64($0) }
+        let deviceID = nonEmpty(headers["x-mme-device-id"]) ?? nonEmpty(deviceString("uniqueDeviceIdentifier"))
+
+
+        // AuthKit on some iOS versions does not return X-Apple-I-MD-LU. Try the device
+        // object, then derive a stable value from the device ID (the same SHA-256 hex
+        // form the v3 path uses) so the request is still coherent and repeatable.
+        var localUserID = nonEmpty(headers["x-apple-i-md-lu"])
+            ?? nonEmpty(deviceString("localUserUUID"))
+            ?? nonEmpty(deviceString("localUserID"))
+        if localUserID == nil, let deviceID = deviceID
+        {
+            localUserID = SHA256.hash(data: Data(deviceID.utf8)).map { String(format: "%02X", $0) }.joined()
+        }
+        let serial = nonEmpty(headers["x-apple-i-srl-no"]) ?? nonEmpty(deviceString("serialNumber")) ?? "0"
+        let rawDescription = nonEmpty(headers["x-mme-client-info"]) ?? nonEmpty(deviceString("serverFriendlyDescription"))
+
+
+        var missing: [String] = []
+        if machineID == nil { missing.append("X-Apple-I-MD-M") }
+        if oneTimePassword == nil { missing.append("X-Apple-I-MD") }
+        if routingInfo == nil { missing.append("X-Apple-I-MD-RINFO") }
+        if localUserID == nil { missing.append("X-Apple-I-MD-LU") }
+        if deviceID == nil { missing.append("X-Mme-Device-Id") }
+        if rawDescription == nil { missing.append("X-MMe-Client-Info") }
+        guard missing.isEmpty,
+              let machineID = machineID, let oneTimePassword = oneTimePassword, let routingInfo = routingInfo,
+              let localUserID = localUserID, let deviceID = deviceID, let rawDescription = rawDescription
+        else { throw NativeAnisetteError.missingHeaders(missing) }
+
+        // GSA rejects requests that identify as Xcode; keep the real device model and
+        // OS, but use the com.apple.akd client token that AltStore's compat module expects.
+        // AKDevice can also report a missing client token as "(null)/1.0".
+        var description = rawDescription.replacingOccurrences(of: "com\\.apple\\.dt\\.Xcode/[0-9.]+",
+                                                              with: "com.apple.akd/1.0",
+                                                              options: .regularExpression)
+        description = description.replacingOccurrences(of: "\\(null\\)/[0-9.]+",
+                                                       with: "com.apple.akd/1.0",
+                                                       options: .regularExpression)
+        description = description.replacingOccurrences(of: "(null)", with: "com.apple.akd")
+
+        return ALTAnisetteData(machineID: machineID,
+                               oneTimePassword: oneTimePassword,
+                               localUserID: localUserID,
+                               routingInfo: routingInfo,
+                               deviceUniqueIdentifier: deviceID,
+                               deviceSerialNumber: serial,
+                               deviceDescription: description,
+                               date: Date(),
+                               locale: .current,
+                               timeZone: .current)
+    }
+}
+
 struct AnisetteDataManager
 {
     static let shared = AnisetteDataManager()
@@ -894,6 +1034,24 @@ struct AnisetteDataManager
 
     func requestAnisetteData() async throws -> ALTAnisetteData
     {
+        // ALTDAEMON_ANISETTE_MODE: "native" (device only), "v3" (public/self-hosted
+        // provider only), anything else = try the device first, then fall back to v3.
+        let mode = ProcessInfo.processInfo.environment["ALTDAEMON_ANISETTE_MODE"]?.lowercased()
+        if mode != "v3"
+        {
+            do
+            {
+                let data = try NativeAnisetteProvider.requestAnisetteData()
+                print("Anisette: on-device AuthKit succeeded (MID length: \(data.machineID.count), OTP length: \(data.oneTimePassword.count)).")
+                return data
+            }
+            catch
+            {
+                print("Anisette: on-device AuthKit failed:", error.localizedDescription)
+                if mode == "native" { throw error }
+            }
+        }
+
         let payload = try await self.provider.requestAnisetteData()
 
         return ALTAnisetteData(machineID: payload.machineID,
