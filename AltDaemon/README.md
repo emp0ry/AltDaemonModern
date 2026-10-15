@@ -1,23 +1,28 @@
 # AltDaemonModern
 
-This fork repairs AltDaemon for rootless jailbreaks and replaces its obsolete 2020 private-AuthKit anisette generator with an anisette v3 client. It preserves AltStore's existing XPC protocol, so compatible AltStore Classic builds do not need a protocol change.
+This fork repairs AltDaemon for rootless jailbreaks. Version 1.2.2 tries on-device AuthKit anisette first and retains the anisette v3 client as fallback. It preserves AltStore's existing XPC protocol, so compatible AltStore Classic builds do not need a protocol change.
+
+Thanks to [ichitaso](https://github.com/ichitaso/AltDaemonModern) for the on-device anisette and authentication/retry fixes in 1.2.2. See the [release notes](../RELEASE_NOTES_1.2.2.md) for validation details.
 
 ## What changed
 
-- Uses an anisette v3 provider and Apple's current MID provisioning flow.
+- Tries on-device AuthKit anisette first; if it cannot produce the required data,
+  falls back to an anisette v3 provider and Apple's MID provisioning flow.
 - Uses the pinned Starscream 4.0.8 transport for daemon-safe WebSocket provisioning.
 - Persists one stable random identifier and the associated `adi.pb` provisioning blob
   in an explicit daemon preferences suite, including across launchd restarts.
 - Reprovisions once when the provider reports Apple error `-45061`; it never loops indefinitely.
 - Retries only transient `get_headers` failures with a short bounded backoff.
-- Automatically fails over between three HTTPS SideStore anisette endpoints and
+- In v3 mode, automatically fails over between three HTTPS SideStore anisette endpoints and
   remembers the last endpoint that succeeded.
-- Uses a coherent current model/macOS/Xcode client identity instead of mixing a
-  current macOS version with the obsolete Xcode 11.2 build identifier.
+- Applies the 1.2.2 compatibility client-info headers to both GSA authentication
+  and developer-services requests.
 - Includes an AltStore-only compatibility module for Classic 2.2.1 that updates
   its obsolete GSA authentication identity to `com.apple.akd`, retries transient
   Apple HTTP 429/5xx responses with bounded backoff, and reports an accurate
   service error instead of trying to parse an HTML error page as a property list.
+- Handles retry-task creation on an invalidated URL session, with a fresh
+  ephemeral-session fallback instead of an uncaught Objective-C exception.
 - Serializes concurrent requests through a Swift actor.
 - Replaces the polling semaphore in the XPC transport with a locked pending-read
   queue, preventing intermittent daemon crashes and lost-connection errors.
@@ -61,7 +66,8 @@ The package builder stages files under `/var/jb`, signs a private copy of the in
 
 ## Configuration
 
-The default provider order is `https://ani.sidestore.io`,
+By default, the daemon tries on-device AuthKit first. If that path fails, the
+default v3 provider order is `https://ani.sidestore.io`,
 `https://ani.sidestore.app`, then `https://ani.sidestore.zip`. The daemon tries
 the next endpoint after a failure and remembers the last endpoint that worked.
 A self-hosted anisette v3 server is recommended when possible because the
@@ -77,10 +83,11 @@ The launchd environment may override these values:
 
 | Variable | Purpose |
 | --- | --- |
+| `ALTDAEMON_ANISETTE_MODE` | `native` uses only on-device AuthKit; `v3` uses only the configured v3 providers; unset or any other value tries native first, then v3. |
 | `ALTDAEMON_ANISETTE_URL` | One trusted anisette v3 base URL. Setting it disables public fallback. HTTPS is required by default. |
 | `ALTDAEMON_ANISETTE_URLS` | Ordered comma-, semicolon-, or newline-separated anisette v3 URLs for automatic failover. |
-| `ALTDAEMON_ANISETTE_CLIENT_INFO` | Override `X-Mme-Client-Info` without rebuilding. |
-| `ALTDAEMON_ANISETTE_USER_AGENT` | Override the AuthKit user agent without rebuilding. |
+| `ALTDAEMON_ANISETTE_CLIENT_INFO` | Override the v3 provider's client info without rebuilding. The AltStore compatibility module separately applies its GSA/developer-services headers. |
+| `ALTDAEMON_ANISETTE_USER_AGENT` | Override the v3 provider's user agent without rebuilding. |
 | `ALTDAEMON_ALLOW_INSECURE_ANISETTE=1` | Explicitly permit HTTP/WS, intended only for a trusted local server. |
 | `ALTDAEMON_ANISETTE_STATE_SUITE` | Use a separate UserDefaults suite instead of the default `io.altstore.altdaemon`, mainly for isolated diagnostics. |
 
@@ -96,19 +103,19 @@ ALTDAEMON_ANISETTE_STATE_SUITE=io.altstore.altdaemon.selftest ./AltDaemon --self
 
 The command prints only pass/fail and the lengths of MID/OTP. It never prints their values. Use a separate state suite so testing cannot invalidate the live daemon's provisioning state.
 
-The AltStore compatibility module writes only HTTP status, content type, byte
-count, and retry timing to a bounded 64 KiB file in AltStore's temporary
+The AltStore compatibility module writes only request-path metadata, HTTP and
+Apple status fields, content type, byte count, and retry timing to a bounded 64 KiB file in AltStore's temporary
 container. It never records request bodies, response bodies, credentials,
 anisette values, or Apple tokens.
 
 ## Security and trust
 
-AltDaemon does not receive or transmit the user's Apple ID password. The anisette provider participates in MID provisioning and receives an opaque random identifier and ADI blob. Apple-account authentication remains between AltStore/AltSign and Apple.
+AltDaemon does not receive or transmit the user's Apple ID password. The native path obtains anisette through the device's AuthKit framework without using a public anisette server. When the v3 path is used, the provider participates in MID provisioning and receives an opaque random identifier and ADI blob. Apple-account authentication remains between AltStore/AltSign and Apple.
 
 Do not add raw header logging. `X-Apple-I-MD`, `X-Apple-I-MD-M`, and `adi.pb` must be treated as authentication material. Public providers are an availability and trust dependency; self-hosting is preferable.
 
 ## Installation
 
-The build product is unsigned. A rootless installation must be signed with the entitlements in `AltDaemon.entitlements`, installed as `/var/jb/usr/bin/AltDaemon`, and bootstrapped with the rootless plist at `AltDaemon/package/var/jb/Library/LaunchDaemons/com.rileytestut.altdaemon.plist`. Back up an existing executable and validate a separately named, signed copy with `--self-test-anisette` before replacing anything. The obsolete private AuthKit entitlement is intentionally absent because the v3 implementation does not load AuthKit.
+The build product is unsigned. A rootless installation must be signed with the entitlements in `AltDaemon.entitlements`, installed as `/var/jb/usr/bin/AltDaemon`, and bootstrapped with the rootless plist at `AltDaemon/package/var/jb/Library/LaunchDaemons/com.rileytestut.altdaemon.plist`. Back up an existing executable and validate a separately named, signed copy with `--self-test-anisette` before replacing anything. Version 1.2.2 includes the private AuthKit client entitlement for the on-device path.
 
 The standard build script does not create a `.deb` or modify a connected device. Packaging and installation are separate, explicit steps.
