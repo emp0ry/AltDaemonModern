@@ -77,3 +77,7 @@ Due to the licensing of some dependencies used by AltStore, I have no choice but
 * Twitter (Less active nowadays): [@rileytestut](https://twitter.com/rileytestut)
 
 Questions about AltStore in general? Make sure to read the FAQ at https://altstore.io/faq/
+
+## Website
+
+The [product website](https://altdaemon.emp0ry.com/) is also available at [emp0ry.com/AltDaemonModern/](https://emp0ry.com/AltDaemonModern/). Website sources and publication are maintained in the private emp0ry.com project. Completed application releases notify its central static build; this repository contains the application and its technical documentation.
