@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+PLIST=/Library/LaunchDaemons/com.rileytestut.altdaemon.plist
+JBROOT=$(jbroot /)
+JBROOT=${JBROOT%/}
+
+# The jbroot path is randomized, so launchd needs the resolved absolute binary path.
+sed -i "s|<string>/usr/bin/AltDaemon</string>|<string>$JBROOT/usr/bin/AltDaemon</string>|" "$PLIST"
+
+launchctl bootout system "$PLIST" >/dev/null 2>&1 || true
+launchctl bootstrap system "$PLIST"
+launchctl kickstart -k user/foreground/com.rileytestut.altdaemon

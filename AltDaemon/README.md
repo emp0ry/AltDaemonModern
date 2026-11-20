@@ -1,8 +1,8 @@
 # AltDaemonModern
 
-This fork repairs AltDaemon for rootless jailbreaks. Version 1.2.2 tries on-device AuthKit anisette first and retains the anisette v3 client as fallback. It preserves AltStore's existing XPC protocol, so compatible AltStore Classic builds do not need a protocol change.
+This fork repairs AltDaemon for rootless and Dopamine RootHide jailbreaks. Version 1.2.3 tries on-device AuthKit anisette first and retains the anisette v3 client as fallback. It preserves AltStore's existing XPC protocol, so compatible AltStore Classic builds do not need a protocol change.
 
-Thanks to [ichitaso](https://github.com/ichitaso/AltDaemonModern) for the on-device anisette and authentication/retry fixes in 1.2.2. See the [release notes](../RELEASE_NOTES_1.2.2.md) for validation details.
+Thanks to [ichitaso](https://github.com/ichitaso/AltDaemonModern) for the on-device anisette and authentication/retry fixes in 1.2.2, and the HTTP 503 fix and RootHide package in 1.2.3. See the [release notes](../RELEASE_NOTES_1.2.3.md) for validation details.
 
 ## What changed
 
@@ -15,8 +15,10 @@ Thanks to [ichitaso](https://github.com/ichitaso/AltDaemonModern) for the on-dev
 - Retries only transient `get_headers` failures with a short bounded backoff.
 - In v3 mode, automatically fails over between three HTTPS SideStore anisette endpoints and
   remembers the last endpoint that succeeded.
-- Applies the 1.2.2 compatibility client-info headers to both GSA authentication
-  and developer-services requests.
+- Applies the compatibility client-info headers to both GSA authentication
+  and developer-services requests. Since 2026-11-20 Apple's GSA edge answers
+  HTTP 503 when the OS name is `macOS;`, so 1.2.3 sends `Mac OS X;` and rewrites
+  `<macOS;` in any other GSA request.
 - Includes an AltStore-only compatibility module for Classic 2.2.1 that updates
   its obsolete GSA authentication identity to `com.apple.akd`, retries transient
   Apple HTTP 429/5xx responses with bounded backoff, and reports an accurate
@@ -36,7 +38,7 @@ Thanks to [ichitaso](https://github.com/ichitaso/AltDaemonModern) for the on-dev
   communication failures.
 - Includes daemon-specific target fixes needed to build current upstream source.
 
-The minimum deployment target is iOS 15.0. The primary target is Dopamine's standard rootless environment; RootHide is not currently supported.
+The minimum deployment target is iOS 15.0. Supported environments are Dopamine's standard rootless environment and Dopamine RootHide. The legacy RootHide Bootstrap is not tested.
 
 ## Build
 
@@ -63,6 +65,14 @@ scripts/build-rootless-deb.sh /path/to/AltDaemon /path/to/AltDaemonModern.deb
 ```
 
 The package builder stages files under `/var/jb`, signs a private copy of the input binary, and includes the AGPL and third-party notices. It never changes the input binary.
+
+To build a Dopamine RootHide package from the same binary:
+
+```sh
+scripts/build-roothide-deb.sh /path/to/AltDaemon /path/to/AltDaemonModern.deb
+```
+
+The RootHide package uses architecture `iphoneos-arm64e` and stages files relative to the jbroot instead of `/var/jb`. Because the jbroot path is randomized, `postinst` resolves it with `jbroot /` and writes the absolute daemon path into the LaunchDaemon plist before bootstrapping it. The daemon is also signed with `com.apple.private.security.no-sandbox` and the RootHide storage entitlements; without them RootHide sandboxes AltDaemon, the peer check on AltStore's connection is denied, and AltStore reports that AltServer could not be found. The version is read from the rootless `control`, so both packages stay in step.
 
 ## Configuration
 
@@ -116,6 +126,6 @@ Do not add raw header logging. `X-Apple-I-MD`, `X-Apple-I-MD-M`, and `adi.pb` mu
 
 ## Installation
 
-The build product is unsigned. A rootless installation must be signed with the entitlements in `AltDaemon.entitlements`, installed as `/var/jb/usr/bin/AltDaemon`, and bootstrapped with the rootless plist at `AltDaemon/package/var/jb/Library/LaunchDaemons/com.rileytestut.altdaemon.plist`. Back up an existing executable and validate a separately named, signed copy with `--self-test-anisette` before replacing anything. Version 1.2.2 includes the private AuthKit client entitlement for the on-device path.
+The build product is unsigned. A rootless installation must be signed with the entitlements in `AltDaemon.entitlements`, installed as `/var/jb/usr/bin/AltDaemon`, and bootstrapped with the rootless plist at `AltDaemon/package/var/jb/Library/LaunchDaemons/com.rileytestut.altdaemon.plist`. Back up an existing executable and validate a separately named, signed copy with `--self-test-anisette` before replacing anything. The private AuthKit client entitlement for the on-device path is included since 1.2.2.
 
 The standard build script does not create a `.deb` or modify a connected device. Packaging and installation are separate, explicit steps.

@@ -18,12 +18,12 @@
 // "session expired" (AltStore error 1100).
 // 1: apply the override (working configuration). 0: leave AltSign's value untouched.
 #define AAM_DEV_IDENTITY 1
-#define AAM_DEV_CLIENT_INFO @"<Mac15,7> <macOS;15.7.9;24G830> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
+#define AAM_DEV_CLIENT_INFO @"<Mac15,7> <Mac OS X;15.7.9;24G830> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
 
 #if AAM_IDENTITY == 1
-#define AAM_CLIENT_INFO @"<MacBookPro13,2> <macOS;13.1;22C65> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
+#define AAM_CLIENT_INFO @"<MacBookPro13,2> <Mac OS X;13.1;22C65> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
 #else
-#define AAM_CLIENT_INFO @"<Mac15,7> <macOS;15.7.9;24G830> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
+#define AAM_CLIENT_INFO @"<Mac15,7> <Mac OS X;15.7.9;24G830> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
 #endif
 
 // The User-Agent AltSign sends (unmodified). It contains com.apple.dt.Xcode/26.0 and
@@ -316,6 +316,15 @@ static NSURLSessionDataTask *AAMDataTaskWithRequest(id object,
 
     if (!AAMIsAppleAuthenticationRequest(request))
     {
+        // Since 2026-11-20 the GSA edge answers 503 when client info contains "macOS;".
+        NSString *clientInfo = [request valueForHTTPHeaderField:@"X-MMe-Client-Info"];
+        if ([request.URL.host.lowercaseString isEqualToString:@"gsa.apple.com"] && [clientInfo containsString:@"<macOS;"])
+        {
+            NSMutableURLRequest *gsaRequest = [request mutableCopy];
+            [gsaRequest setValue:[clientInfo stringByReplacingOccurrencesOfString:@"<macOS;" withString:@"<Mac OS X;"]
+              forHTTPHeaderField:@"X-MMe-Client-Info"];
+            return AAMOriginalDataTaskImplementation(object, selector, gsaRequest, completionHandler);
+        }
         return AAMOriginalDataTaskImplementation(object, selector, request, completionHandler);
     }
 
@@ -364,7 +373,7 @@ static void AAMInitialize(void)
             method_setImplementation(class_getInstanceMethod(sessionClass, selector), (IMP)AAMDataTaskWithRequest);
         }
 
-        AAMAppendDiagnostic([NSString stringWithFormat:@"loaded build=native-final in %@ sessionClass=%@",
+        AAMAppendDiagnostic([NSString stringWithFormat:@"loaded build=native-macosx in %@ sessionClass=%@",
                              NSBundle.mainBundle.bundleIdentifier ?: @"(unknown)",
                              NSStringFromClass(sessionClass)]);
         [probeSession invalidateAndCancel];
