@@ -86,7 +86,13 @@
               <div class="download-card-head"><span class="download-platform">Rootless</span><span class="download-format">DEB</span></div>
               <h3>GitHub release</h3>
               <p>Signed arm64 package for Dopamine’s standard rootless environment. Requires a compatible jailbreak and AltStore setup.</p>
-              <a class="button button-secondary download-button" href="https://github.com/emp0ry/AltDaemonModern/releases/latest/download/AltDaemonModern_1.2.2_iphoneos-arm64.deb" target="_blank" rel="noreferrer" data-asset-pattern="^AltDaemonModern_.*_iphoneos-arm64[.]deb$">Download</a>
+              <a class="button button-secondary download-button" href="https://github.com/emp0ry/AltDaemonModern/releases/latest/download/AltDaemonModern_1.2.3_iphoneos-arm64.deb" target="_blank" rel="noreferrer" data-asset-pattern="^AltDaemonModern_.*_iphoneos-arm64[.]deb$">Download</a>
+            </article>
+            <article class="download-card reveal reveal-delay-sm">
+              <div class="download-card-head"><span class="download-platform">RootHide</span><span class="download-format">DEB</span></div>
+              <h3>GitHub release</h3>
+              <p>Signed arm64e package for Dopamine RootHide. The installer resolves the randomized jbroot and starts the daemon automatically.</p>
+              <a class="button button-secondary download-button" href="https://github.com/emp0ry/AltDaemonModern/releases/latest/download/AltDaemonModern_1.2.3_iphoneos-arm64e.deb" target="_blank" rel="noreferrer" data-asset-pattern="^AltDaemonModern_.*_iphoneos-arm64e[.]deb$">Download</a>
             </article>
             <article class="download-card reveal reveal-delay-sm">
               <div class="download-card-head"><span class="download-platform">Package manager</span><span class="download-format">REPO</span></div>
@@ -169,11 +175,11 @@
           <div class="responsibility-shell reveal">
             <div class="section-head">
               <span class="section-kicker">Compatibility</span>
-              <h2>Made for standard rootless environments.</h2>
+              <h2>Made for Dopamine rootless and RootHide.</h2>
               <p>The minimum deployment target is iOS 15.0. A compatible jailbreak, AltStore installation, and Apple-account workflow are required.</p>
             </div>
             <div class="legal-grid">
-              <article class="legal-card"><h3>Dopamine rootless</h3><p>The primary target is Dopamine’s standard rootless environment under <code>/var/jb</code>. RootHide is currently unsupported.</p></article>
+              <article class="legal-card"><h3>Dopamine rootless and RootHide</h3><p>Dopamine’s standard rootless environment under <code>/var/jb</code> and Dopamine RootHide each have their own package. The legacy RootHide Bootstrap is not tested.</p></article>
               <article class="legal-card"><h3>iOS compatibility</h3><p>The current release supports iOS 26’s installation path. Jailbreak and AltStore compatibility still depend on the device and iOS version.</p></article>
               <article class="legal-card"><h3>Provider trust</h3><p>The anisette provider receives the random identifier and ADI provisioning blob. A trusted self-hosted server is recommended when possible.</p></article>
               <article class="legal-card"><h3>Open source</h3><p>Daemon changes and reproducible build scripts are available on GitHub under AGPLv3, with upstream and third-party notices preserved.</p></article>

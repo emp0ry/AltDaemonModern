@@ -1,0 +1,5 @@
+#!/bin/sh
+set -e
+
+launchctl bootout system/com.rileytestut.altdaemon >/dev/null 2>&1 || true
+launchctl bootout user/foreground/com.rileytestut.altdaemon >/dev/null 2>&1 || true
